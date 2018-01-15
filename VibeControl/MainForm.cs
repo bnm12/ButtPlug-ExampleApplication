@@ -16,7 +16,8 @@ namespace VibeControl
 {
     public partial class MainForm : Form
     {
-        private List<ButtplugClientDevice> Devices = new List<ButtplugClientDevice>();
+        // Create a list to store the devicelist
+        private List<ButtplugClientDevice> _devices = new List<ButtplugClientDevice>();
 
         private ButtplugWSClient _client;
 
@@ -27,8 +28,10 @@ namespace VibeControl
 
         private void InitClient()
         {
+            // Set name to connect with
             _client = new ButtplugWSClient("Test client");
 
+            // Bind eventhandlers
             _client.DeviceAdded += OnDeviceChanged;
             _client.DeviceRemoved += OnDeviceChanged;
             _client.ErrorReceived += OnError;
@@ -36,7 +39,7 @@ namespace VibeControl
             Connect();
         }
 
-        private void Form1_Load(object sender, EventArgs e)
+        private void MainForm_Load(object sender, EventArgs e)
         {
             InitClient();
         }
@@ -47,11 +50,12 @@ namespace VibeControl
             {
                 if (_client != null)
                 {
-                    //await _client.Connect(new Uri("ws://localhost:12345/buttplug"), true);
+                    // URL to connect to, in this case don't use SSL
                     await _client.Connect(new Uri("ws://localhost:12345/buttplug"), true);
+                    
+                    // Get the list of devices the server currently knows of
                     await _client.RequestDeviceList();
-
-                    Devices = _client.getDevices().ToList();
+                    _devices = _client.getDevices().ToList();
                 }
             }
             catch (Exception ex)
@@ -62,17 +66,20 @@ namespace VibeControl
 
         private void OnDeviceChanged(object sender, DeviceEventArgs e)
         {
+            // Handle our events for added and removed devices
             switch (e.Action)
             {
                 case DeviceAction.ADDED:
-                    Devices.Add(e.Device);
+                    // Add new device to list
+                    _devices.Add(e.Device);
                     break;
 
                 case DeviceAction.REMOVED:
-                    Devices.RemoveAll(dev => dev.Index == e.Device.Index);
+                    // Remove all devices (really should only ever be one) which matches the removed one
+                    _devices.RemoveAll(dev => dev.Index == e.Device.Index);
                     break;
             }
-            ToyName.Text = string.Join(Environment.NewLine, Devices.Select(d => d.Name));
+            ToyName.Text = string.Join(Environment.NewLine, _devices.Select(d => d.Name));
         }
 
         private void OnError(object sender, ErrorEventArgs e)
@@ -80,27 +87,36 @@ namespace VibeControl
             MessageBox.Show(e.Message.ErrorMessage, "Error");
             if (_client?.IsConnected ?? false)
             {
-                Task.Run(async () => { await _client.Disconnect(); });
+                // Disconnect the client as we failed connecting
+                Task.Run(async () => { await _client.Disconnect(); }); 
             }
             _client = null;
         }
 
         private void SpeedControl_Scroll(object sender, EventArgs e)
         {
-            foreach (var dev in Devices)
+            // Loop all devices
+            foreach (var dev in _devices)
             {
+                // See if the device allows the "Vibrate" command (it might be e-stim or something else for all we know)
                 if (dev.AllowedMessages.TryGetValue("VibrateCmd", out var attrs))
                 {
                     try
                     {
+                        // If it has vibrators the attrs will tell us the number of vibrators (e.g. we-vibes has an internal and external one)
                         uint vibratorCount = attrs.FeatureCount ?? 0;
 
+                        // Create list to store our vibrate settings in to send to the server later
                         List<VibrateCmd.VibrateSubcommand> vibratorSettings = new List<VibrateCmd.VibrateSubcommand>();
 
+                        // For each vibrator the vibrator has
                         for (uint i = 0; i < vibratorCount; i++)
                         {
+                            // Add a vibrate command to the list for the specific vibrator of the client with the value of our slider 0 -> 1
                             vibratorSettings.Add(new VibrateCmd.VibrateSubcommand(i, (double)SpeedControl.Value / 100));
                         }
+                        
+                        // Send our combined settings to the server to execute
                         _client.SendDeviceMessage(dev, new VibrateCmd(dev.Index, vibratorSettings));
                     }
                     catch
@@ -112,10 +128,12 @@ namespace VibeControl
 
         private async void ScanBtn_Click(object sender, EventArgs e)
         {
+            // Make sure the client exists before we continue
             if(_client == null)
             {
                 InitClient();
             }
+            // Tell the server to look for an updated list of devices
             bool success = await _client.StartScanning();
         }
     }
