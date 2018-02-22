@@ -54,8 +54,7 @@ namespace VibeControl
                     await _client.Connect(new Uri("ws://localhost:12345/buttplug"), true);
                     
                     // Get the list of devices the server currently knows of
-                    await _client.RequestDeviceList();
-                    _devices = _client.getDevices().ToList();
+                    _devices = _client.Devices.ToList();
                 }
             }
             catch (Exception ex)
